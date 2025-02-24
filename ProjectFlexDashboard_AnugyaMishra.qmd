@@ -1,0 +1,1511 @@
+---
+title: "Advanced Predictive Analytics Project Dashboard"
+author: "Anugya Mishra"
+format: 
+    dashboard:
+      logo: DULogo.png
+      scrolling: true
+      theme: united
+embed-resources: true
+---
+
+```{r setup, include=FALSE,warning=FALSE}
+#include=FALSE will not include r code in output
+#warning=FALSE will remove any warnings from output
+#include=FALSE will not include r code in output
+#warning=FALSE will remove any warnings from output
+library(readr)
+library(lmtest)
+library(DT) #v0.33 datatable()
+library(GGally) #v2.2.1
+library(ggcorrplot) #v0.1.4.1
+library(MASS) #v7.3-60.2 for Boston data
+library(flexdashboard) #v0.6.2
+library(plotly) #v4.10.4
+library(crosstalk) #v1.2.0
+library(knitr) #v1.45 kable(digits=)
+library(crosstalk) #v1.2.1 SharedData()
+library(tidymodels) #v1.2.0
+library(parsnip) #v1.2.1 linear_reg(), set_engine(), set_mode(), fit(), predict()
+library(yardstick) #v1.3.1 metrics(), rac_auc(), roc_curve(), metric_set(), conf_matrix()
+library(dplyr) #v1.1.4 %>%, select(), select_if(), filter(), mutate(), group_by(), 
+    #summarize(), tibble()
+library(ggplot2) #v3.5.1 ggplot()
+library(broom) #v1.0.6 for tidy(), augment(), glance()
+library(rsample) #v1.2.1 initial_split()
+library(rpart) #v 4.1.19 Partition package to create trees
+library(rpart.plot) #v 3.1.1 creates nicer tree plots
+library(vip) #v0.3.2 vip()
+  #library(parsnip) #v1.2.1 linear_reg(), set_engine(), set_mode(), fit(), predict()
+  #library(yardstick) #v1.3.1 metrics(), rac_auc(), roc_curve(), metric_set(), conf_matrix()
+  #library(dplyr) #v1.1.4 %>%, select(), select_if(), filter(), mutate(), group_by(), 
+    #summarize(), tibble()
+  #library(ggplot2) #v3.5.1 ggplot()
+  #library(broom) #v1.0.6 for tidy(), augment(), glance()
+  #library(rsample) #v1.2.1 initial_split()
+library(performance) #v0.12.0 check_model
+library(see) #v0.8.4 for check_model plots from performance
+library(patchwork) #v1.2.0 for check_model plots from performance
+library(kableExtra) #v1.4.0 kable_styling(font_size = 20)
+
+```
+
+```{r load_data}
+#Load the data
+df_fuel <- read_csv("Fuel Consumption Ratings.csv") 
+colnames(df_fuel)<- c("model_year","make","model","vehicle_class","engine_size","cylinders","transmission","fuel_type",
+                      "fuel_consumption_city","fuel_consumption_hwy","fuel_consumption_combined","fuel_consumption_combined2",
+                      "CO2_emissions","CO2_rating","smog_rating")
+df_fuel<-df_fuel %>% 
+  select(-fuel_consumption_combined2,-model,-model_year) #removing model year since we only have one year of data, model has too many categories and fuel_consumption_combined2 is the same information as fuel_consumption_combined but with different unit of measurement
+
+
+```
+```{r data_cleaning}
+
+df_fuel<-df_fuel %>% 
+  mutate(fuel_type=ifelse(fuel_type=='Z','premium_gasoline', 
+                        ifelse(fuel_type=='D','diesel',
+                               ifelse(fuel_type=='E','ethanol',
+                                      'regular_gasoline')))) #changing to more understandable name
+  
+df_fuel<-df_fuel %>%
+  mutate(CO2_rating=factor(ifelse(CO2_rating<6,"Low", 
+                                      'High')),
+         smog_rating=factor(ifelse(smog_rating<6,"Low", #converting to qualitative variable
+                                      'High'))) 
+
+df_fuel<-df_fuel %>%
+  mutate(transmission = ifelse(transmission== "M5" | transmission == "M6" | transmission =="M7", "M",
+                               ifelse(transmission== "A6"| transmission== "A7"| transmission== "A8"| transmission== "A9"| transmission== "A10", "A",
+                                      ifelse(transmission== "AM8"| transmission== "AM6"| transmission== "AM7", "AM",
+                                             ifelse(transmission== "AV"| transmission== "AV1"| transmission== "AV6"| transmission== "AV7"| transmission== "AV8"| transmission== "AV10","AV","AS")))))
+
+
+df_fuel<-df_fuel %>%
+  mutate(make= ifelse(make=="Ford","Ford",
+                      ifelse(make=="Porsche","Porsche",
+                             ifelse(make=="Chevrolet","Chevrolet",
+                                    ifelse(make=="Toyota","Toyota",
+                                           ifelse(make=="BMW","BMW", "Others"))))))
+
+df_fuel<-df_fuel %>%
+  mutate(vehicle_class=if_else(vehicle_class %in% c("Station wagon: Mid-size","Station wagon: Small","Special purpose vehicle","Van: Passenger"), "Others",if_else(vehicle_class %in% c("Minivan"), "SUV: Standard",if_else(vehicle_class %in% c("Pickup truck: Small", "Pickup truck: Standard"), "Pickup truck",if_else(vehicle_class %in% c("Sport utility vehicle: Standard", "Sport utility vehicle: Small"), "Sport utility vehicle", vehicle_class))))) 
+
+```
+
+# Introduction
+## Row
+### Column {width=60%}
+
+::: {.card title="Avanced Predictive Analytics Project"}
+
+
+**Executive Summary**
+
+This project examines the model-specific fuel consumption ratings for new light-duty vehicles for retail sale and its estimated carbon dioxide emission in Canada in 2022-2023. The goals of this analysis to try to predict the CO2 emissions and well as CO2 Rating and Smog Rating for these vehicles. For this analysis, we first perform some exploratory data analysis(EDA) to understand the distribution of the variables and look for relationships among predictors as well as among predictors and the response variables. 
+
+
+After the EDA, we perform Regression analysis to predict the CO2 emissions for the vehicles using Linear Regression, Regression Trees, Random Forest and Boosted Trees.  Second, we will perform Classification analysis to predict CO2 rating of these vehicles using Classification trees and Logistic Regression. An additional Logistic regression model was also created to predict Smog Ratings, our second response variable. Finally, we summarize the findings from the analysis in our conclusion. 
+
+The **best regression model to predict CO2 emissions was the regression tree** with a *R-squared of 73%* and the **best classification model was the classification tree** with a *Sensitivity of *86%*. 
+
+We find that the variables that decrease CO2 emissions are:
+
+* Vehicles manufactured by Toyota
+* Vehicles with AV(continuous variation) transmission
+* Vehicles using ethanol fuel"
+* Vehicles using regular gasoline fuel
+
+The variables that increase CO2 emissions are:
+
+* Increase in Engine size of vehicles
+* Vehicles manufactured by Ford and Porsche
+* Vehicle class such as Mini-comapct, Pickup truck, sport utility, SUV,& Two Seater
+
+**The Problem Description**
+
+
+This project examines model-specific fuel consumption ratings for new light-duty vehicles for retail sale and its estimated carbon dioxide emission in Canada in 2022-2023. For analysis, I will perform both regression and classification analysis based on CO2 emissions, CO2 Ratings and Smog Ratings. 
+
+The goal for the **regression models is to predict the CO2 emissions** for the new light-duty vehicles using the variables in the data set such as engine size, number of cylinders, vehicle class and make, transmission, fuel type and so on. For this analysis, I will begin with an Exploratory Data Analysis (EDA) to examine the distribution of the variables in the dataset as well as relationships between the variables. Next,I will perform Regression analysis to predict the CO2 emissions and ratings.  Various methods will be used in this analysis, such as  **linear regression, Random Forest regression trees, and Boosted Tree**. 
+
+For the classification analysis, I want to predict perform **if a given light-duty vehicle has a low or high CO2/Smog Rating**. Classification methods such **logistic regression and classification trees.** will be used for this analysis.
+
+Finally, all the models will be summarized and compared to provide a conclusion on the model performance for predicting the variables: CO2 emissions, CO2 Rating and Smog Rating and determine what variables helped in the prediction.  
+
+**The Data**
+
+This dataset has 2756 rows and 12 variables. 
+
+**Data Sources**
+
+2022 fuel consumption ratings. (2022, April 6). Kaggle. https://www.kaggle.com/datasets/rinichristy/2022-fuel-consumption-ratings
+
+Fuel consumption ratings - Open Government Portal. (n.d.). https://open.canada.ca/data/en/dataset/98f1a129-f628-4ce4-b24d-6f16bf24dd64
+
+Fuel consumption ratings - 2022 Fuel Consumption Ratings (2023-08-18) - Open Government Portal. (n.d.). https://open.canada.ca/data/en/dataset/98f1a129-f628-4ce4-b24d-6f16bf24dd64/resource/87fc1b5e-fafc-4d44-ac52-66656fc2a245 
+:::
+
+### Column {width=40%}
+::: {.card title="Variables"}
+**TO PREDICT WITH**
+
+* **make**: Name of the company or brand that manufactured the vehicle
+* **vehicle_class**: Vehicle categories based on gross vehicle weight rating (GVWR)
+* **engine_size**: Volume of vehicle’s cylinder/engine capacity, measures in liters(L)
+* **cylinders**: Number of cylinders the vehicle has
+* **transmission**: The type of transmission (A = automatic; AM = automated manual; AS = automatic with selector gear lever; AV = continuous variation)
+* **fuel_type**: Type of fuel used in the vehicle 
+* **fuel_consumption_city**:  City fuel consumption rating for gasoline mode only, measured in L/100 km 
+* **fuel_consumption_hwy**: Highway fuel consumption rating for gasoline mode only,  measured in L/100 km
+* **fuel_consumption_combined**: Combined fuel consumption rating for gasoline mode only,  measured in L/100 km
+
+
+**WE WANT TO PREDICT**
+
+* **CO2_emissions**: The tailpipe emissions of carbon dioxide (in grams per kilometer) for combined city and highway driving
+* **CO2_rating**: The tailpipe emissions of carbon dioxide rated  Low (ratings from 1-5) or High(ratings from 6-10 on a scale of from 1(worst) to 10(best))
+* **Smog_rating**: The tailpipe emissions of smog-forming pollutants rated Low (ratings from 1-5) or High(ratings from 6-10 on a scale of from 1(worst) to 10(best))
+
+:::
+
+# Data Exploration
+## Row
+### Column {width=25%}
+ 
+::: {.card title="Data Overview"}
+From this data we can see that our variables have a variety of different values based on their types. Firstly, CO2 emissions has a mean of 259.2 g/km with a maximum of 608.0 g/km. Fuel consumption rating for city has a mean of 12.51  L/100 km while fuel consumption rating for highway has a mean of 9.36  L/100 km, resulting in an combined average fuel consumption rating of 11.09  L/100 km. Some variables had a lot of categories so their summaries are provided in the bottom table. 
+
+We also notice that CO2 rating and Smog rating variables are categorical variables with two categories: High (if their rating in 6 or above on a scale of 10) and Low (if rating is below 6).
+
+Low and High CO2 ratings have a noticeable difference in the mean CO2 emissions. For transmission, we observe that AV transmission has a comparatively lower average CO2 emissions compared to other categories. Two seater, pickup truck and SUV standard vehicle class have comparatively higher average CO2 emissions.
+:::
+
+### Column {width=45%}
+
+::: {.card title="View the Data Summaries" fill="false"}
+Let's look at the range of values for each variable in the given dataset.
+
+```{r}
+#View data
+summary(df_fuel)
+```
+:::
+
+### Column {width=30%}
+
+```{r}
+#| title: Average CO2 Emissions by CO2 Rating 
+#| fill: false
+df_fuel %>%
+  group_by(CO2_rating) %>%
+  summarize(n=n(), mean(CO2_emissions)) %>%
+  kable(digits=2)
+```
+
+```{r}
+#| title: Average CO2 Emissions by Smog Rating 
+#| fill: false
+df_fuel %>%
+  group_by(smog_rating) %>%
+  summarize(n=n(), mean(CO2_emissions)) %>%
+  kable(digits=2)
+```
+
+```{r}
+#| title: CO2 Emissions by Fuel Type
+#| fill: false
+df_fuel %>%
+  group_by(fuel_type) %>%
+  summarize(n=n(),mean(CO2_emissions)) %>%
+  kable(digits=2)
+```
+
+```{r}
+#| title: CO2 Emissions by Transmission
+#| fill: false
+df_fuel %>%
+  group_by(transmission) %>%
+  summarize(n=n(),mean(CO2_emissions)) %>%
+  kable(digits=2)
+```
+
+```{r}
+#| title: CO2 Emissions by Make
+#| fill: false
+df_fuel %>%
+  group_by(make) %>%
+  summarize(n=n(),mean(CO2_emissions)) %>%
+  kable(digits=2)
+```
+
+```{r}
+#| title: CO2 Emissions by Vehicle Class
+#| fill: false
+df_fuel %>%
+  group_by(vehicle_class) %>%
+  summarize(n=n(),mean(CO2_emissions)) %>%
+  kable(digits=2)
+```
+
+
+# Data Visualization 
+## Row
+### Column {width=40%}
+
+::: {.card title="Response Variables relationships with predictors"}
+
+* We observe that 78% of the light-duty vehicles in our dataset have Low CO2 Rating (rating of 5 or below on a scale from 0 to 10). For Smog Rating, the data is a bit more balanced, with 40.5% of the data having Low Smog Rating and 59.5% having High Smog Rating. 
+
+* Looking at the correlation matrix, we see multicollinearity issue between many of the continuous variables so I removed engine_size, Fuel consumption city, and Fuel consumption Highway for the regression models.
+
+* We see a slight positive skew in the CO2 emissions data, but most of the values are concentrated between 100 g/km to 400 g/km.
+
+* Among the potential predictors for CO2 emissions, the strongest relationships occur with the Fuel Consumption variables.
+
+:::
+
+### Column {width = 60%}
+
+```{r, fig.height =2}
+#| title: CO2 Rating
+ggplot(df_fuel,aes(x=CO2_rating)) + geom_bar()
+```
+
+```{r, fig.height = 2}
+#| title:  Smog Rating
+ggplot(df_fuel, aes(x=smog_rating)) + geom_bar()
+```
+
+```{r, fig.height = 2}
+#| title:  CO2 Emissions
+ggplot(df_fuel, aes(CO2_emissions)) + geom_histogram(bins=20)
+```
+
+
+## Row {.tabset}
+
+### CO2 Emissions vs CO2 rating and Smog Rating
+```{r, fig.height = 3.5}
+ggpairs(dplyr::select(df_fuel,CO2_emissions,CO2_rating,smog_rating))+
+  theme(axis.text.y=element_text(size=7))
+```
+### CO2 Emissions vs Transmission and Fuel Type
+```{r}
+ggpairs(dplyr::select(df_fuel,CO2_emissions,transmission,fuel_type))+
+  theme(axis.text.x = element_text(angle = 65, size = 7, hjust = 1))+
+  theme(axis.text.y=element_text(size=6))
+
+```
+
+### CO2 Emissions vs Make and Vehicle Class
+```{r}
+ggpairs(dplyr::select(df_fuel,CO2_emissions,make,vehicle_class))+
+  theme(axis.text.x = element_text(angle = 65,size = 7, hjust = 1))+
+  theme(axis.text.y=element_text(size=6))
+
+```
+
+
+### Correlation matrix-CO2 Emissions and Continuous Variables
+```{r, fig.height = 3.5}
+ggcorrplot(cor(dplyr::select(df_fuel,CO2_emissions,engine_size,cylinders,fuel_consumption_city,fuel_consumption_hwy,fuel_consumption_combined)),lab = TRUE, lab_size = 3)
+```
+
+### CO2 rating vs Continuous Variables 
+```{r, fig.height = 3.5}
+ggpairs(dplyr::select(df_fuel,CO2_rating,fuel_consumption_combined,engine_size,cylinders,fuel_consumption_city,fuel_consumption_hwy))+theme(strip.text.x = element_text(size = 5),
+           strip.text.y = element_text(size = 5))
+```
+
+### Smog Rating vs Continuous Variables 
+```{r, fig.height = 3.5}
+ggpairs(dplyr::select(df_fuel,smog_rating,fuel_consumption_combined,engine_size,cylinders,fuel_consumption_city,fuel_consumption_hwy))+theme(strip.text.x = element_text(size = 5),
+           strip.text.y = element_text(size = 5))
+```
+
+### CO2 emissions vs Fuel Type
+```{r, fig.height = 3.5}
+df_fuel %>% group_by(fuel_type, CO2_rating) %>%
+  summarize(n=n()) %>%
+  ggplot(aes(y=n, x=CO2_rating,fill=fuel_type)) +
+      geom_bar(position="dodge", stat="identity") +
+      geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
+      ggtitle("CO2 emissions vs Fuel Type") +
+      coord_flip() #makes horizontal
+```
+
+### CO2 emissions vs Transmission
+```{r, fig.height = 3.5}
+
+df_fuel %>% group_by(transmission, CO2_rating) %>%
+  summarize(n=n()) %>%
+  ggplot(aes(y=n, x=CO2_rating,fill=transmission)) +
+      geom_bar(position="dodge", stat="identity") +
+      geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
+      ggtitle("CO2 emissions vs Transmission") +
+      coord_flip() #makes horizontal
+```
+
+### CO2 emissions vs Make
+```{r, fig.height = 3.5}
+### CO2 emissions vs Categorical Variables
+df_fuel %>% group_by(make, CO2_rating) %>%
+  summarize(n=n()) %>%
+  ggplot(aes(y=n, x=CO2_rating,fill=make)) +
+      geom_bar(position="dodge", stat="identity") +
+      geom_text(aes(label=n), position=position_dodge(width=0.9), vjust=-0.25) +
+      ggtitle("CO2 emissions vs Make") +
+      coord_flip() #makes horizontal
+```
+
+
+# Regression  Models
+## Row { .tabset}
+
+### Linear Regression Model Predicting Continuous CO2 Emissions (CO2_emissions)
+
+::: {.card title="Regression Summary"}
+
+To prediction of the continuous variable CO2 Emissions(CO2_emissions), 
+first I will use a linear regression model. The results of the model are summarized below.
+
+The full linear regression model had many non-important predictors so we ran a pruned model by only keeping those predictors that are improtant in predicting CO2 emission. However, we observed that reducing the predictors that did not help with prediction of the 
+CO2 emission and we saw that the metrics/fit statistics remained very similar to the full model (R-square and RMSE (root mean squared error)).
+
+Looking at the assumption check and residual plots, we observed some issues with our data. We also can see that the the Residuals vs
+Fitted curves has patterns. We also failed most of the assumption checks for the linear regression model.
+Therefore, this indicates that either we can transform the data for linear regression or predict CO2 emission using some additional models
+so see if we can improve the model fit.
+
+
+
+**Effect on CO2 emissions by the Predictor Variables**
+```{r, cache=TRUE}
+#create table summary of predictor changes
+predchang = tibble(
+  Variable = c(
+'engine_size','make_Ford','make_Porsche','make_Toyota','vehicle_class_Minicompact','vehicle_class_Others','vehicle_class_Pickup.truck','vehicle_class_Sport.utility.vehicle','vehicle_class_SUV..Small','vehicle_class_SUV..Standard','vehicle_class_Two.seater','transmission_AV', 'fuel_type_ethanol',
+'fuel_type_regular_gasoline' ),
+  Direction = c('Increase','Increase','Increase','Decrease','Increase','Increase','Increase','Increase','Increase','Increase','Increase','Decrease','Decrease','Decrease')
+)
+predchang %>%
+  kable(align = 'l') #pretty table output
+```
+
+:::
+
+### Linear Regression Full
+
+```{r, cache=TRUE}
+#Model and capture metrics
+reg_recipe <- recipe(CO2_emissions ~ ., data = dplyr::select(df_fuel,-fuel_consumption_city,-fuel_consumption_hwy,-CO2_rating,-smog_rating)) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_normalize(all_predictors()) %>%
+  prep()
+df_fuel_reg_norm <- bake(reg_recipe, df_fuel)
+
+#Creating training and testing for regression
+set.seed(12934)
+
+CO2_emissions_reg_split <- initial_split(df_fuel_reg_norm,
+                            prop = .7) 
+df_fuel_reg_norm_train<- rsample::training(CO2_emissions_reg_split)
+df_fuel_reg_norm_test<- rsample::testing(CO2_emissions_reg_split)
+
+ #Creates the 5 sets of data
+
+#Define the model specification
+reg_spec <- linear_reg() %>% ## Class of problem  
+   set_engine("lm") %>% ## The particular function that we use  
+   set_mode("regression") ## type of model
+
+#Fit the model
+reg1_fit <- reg_spec %>%  
+   fit(CO2_emissions ~ .-cylinders-fuel_consumption_combined,data = df_fuel_reg_norm_train)
+
+#Capture the predictions 
+pred_reg1_fit <- augment(reg1_fit,df_fuel_reg_norm_test)
+
+
+#Capture the metrics
+
+curr_metrics <- pred_reg1_fit %>%
+  metrics(truth=CO2_emissions,estimate=.pred)
+
+results_reg <- tibble(model = "Linear Model",
+                  RMSE = curr_metrics[[1,3]],
+                  MAE = curr_metrics[[3,3]],
+                  RSQ = curr_metrics[[2,3]]) 
+```
+
+::: {.card title="Analysis Summary"}
+
+We can see an R-squared of 79.4% and the residuals mostly pass the normality check but 
+for linearity, we see that they skewed at the very end, so there are more values that are more than 0.
+Examining the full model, we observe that there are some predictors that are not significant 
+in predicting the CO2 emissions, so we will created a pruned version of the model by removing 
+non-significant/non-important predictors.
+
+```{r, cache=TRUE}
+#Metrics
+results_reg %>%
+  kable(digits = 2) 
+#Residual Histogram
+reg1_fit %>%
+  check_model(check=c('normality','linearity'))
+
+```
+
+:::
+
+```{r}
+#| title: The Full Regression Model Coefficients
+tidy(reg1_fit) %>%
+  kable(digits=2) 
+```
+
+### Linear Regression Final 
+
+```{r}
+#Model and capture metrics
+reg2_fit <- reg_spec %>%
+  fit(CO2_emissions ~ .-cylinders-fuel_consumption_combined-fuel_type_premium_gasoline-transmission_AM-transmission_AS-transmission_M-vehicle_class_Subcompact-vehicle_class_Mid.size-vehicle_class_Full.size-make_Others-make_Chevrolet,data = df_fuel_reg_norm_train)
+#Capture the predictions and metrics
+pred_reg2_fit <- augment(reg2_fit,df_fuel_reg_norm_test)
+
+
+curr_metrics <- pred_reg2_fit %>%
+  metrics(truth=CO2_emissions,estimate=.pred)
+
+results_new <- tibble(model = "Linear Final Model",
+                  RMSE = curr_metrics[[1,3]],
+                  MAE = curr_metrics[[3,3]],
+                  RSQ = curr_metrics[[2,3]])
+results_reg <- bind_rows(results_reg, results_new)
+reg2_mae <- curr_metrics %>%
+  filter(.metric=='mae') %>%
+  pull(.estimate)
+
+```
+
+::: {.card title="Analysis Summary"}
+
+For this analysis we will use a pruned Linear Regression Model.Although the model's R-squared slightly decreased, the difference is less than 0.5% and the model only consists of significant predictors after removing some of the vehicle class, make, fuel type and transmission type categories that were insignificant.
+
+```{r}
+#Metrics
+results_reg %>%
+  kable(digits=3)
+```
+
+## Assumption 1 Check: Little to no multi-collinearity
+
+The Variance Inflation Factor (VIF) allows us to check for collinearity amongst the X variables. A general rule is if VIF associated with a variable is > 5 or 10 then - this means we have multicollinearity. We would expect the interaction term to be highly related to the other variables. None of the values fall above 5 so we won't remove any more variables at this point.
+
+```{r assumption_1, fig.height=5}
+reg2_fit %>%
+  check_model(check='vif')
+```
+## For linearity, it did not pass the assumption check but the residuals are mostly normally distributed since the residuals distribution follows the distribution of the normal curve.
+```{r}
+#Assumptions Linearity and Normality 
+reg2_fit %>%
+  check_model(check=c('normality','homogeneity'))
+```
+## Assumption 3 Check: Homoscedasticity of errors-contd
+
+The bptest() from the lmtest package can also test for non-constant variances in the residuals. This test is often called the Breusch-Pagan test. The test has a null hypothesis of constant error variance against the alternative that the error variance changes with the level of the response (fitted values), or with a linear combination of predictors.  
+
+When we conducted the bptest, the p-value was small which means that we rejected the null and concluded that the error variance changes/is non-constant. We did not pass this assumption check which is something to keep in mind during prediction.
+
+```{r}
+bptest(reg2_fit$fit, data=df_fuel_reg_norm_test, 
+       varformula = ~ fitted.values(reg2_fit$fit),
+       studentize = TRUE)
+```
+## Assumption 4 Check: Independence of the observations
+
+Here we can check the independence of the observations with a Durbin Watson test statistic. The Durbin Watson test computes the residual first order autocorrelation. In general values, between 1.5 to 2.5 are relatively normal and we don't worry about them. Since the statistic is very close to 2, we don't see a violation of independence (or evidence of autocorrelation).
+
+```{r assumption_4}
+#Assumption 4 Check: Independence of the observations
+
+set.seed(123)
+dwtest(reg2_fit$fit, iterations=15)
+```
+:::
+
+```{r}
+#| title: The Final Regression Model Coefficients
+tidy(reg2_fit) %>%
+  kable(digits=2)
+```
+
+```{r, cache=TRUE}
+#| title: Compare actual (CO2_emissions) vs predicted (y_hat) for pruned regression model
+#| 
+#Plot the Actual Versus Predicted Values
+ggplotly(ggplot(data = pred_reg2_fit,
+            aes(x = .pred, y = CO2_emissions)) +
+          geom_point(col = "#6e0000") +
+            geom_abline(slope = 1) +
+            ggtitle(paste("Pruned Regression with MAE",round(reg2_mae,2))))
+```
+```{r assumption_3,fig.height=7 }
+
+pred_reg2_fit %>%
+  ggplot(aes(y=.resid, x=.pred)) +
+    geom_point(col="#6E0000") + 
+  geom_hline(yintercept=0, linetype = 3) + 
+  geom_hline(yintercept=3, linetype = 2) +
+  geom_hline(yintercept=2, linetype = 3) + 
+  geom_hline(yintercept=-2, linetype = 3) + 
+  geom_hline(yintercept=-3, linetype = 2) +
+    scale_x_continuous("Fitted Values") +
+    scale_y_continuous("Residuals")
+
+```
+
+## Row { .tabset}
+
+### Regression Trees predicting Vehicle's CO2_emissions (CO2 emissions )
+
+
+```{r}
+#Model and capture metrics
+#Define the model specification
+tree_reg_spec <- decision_tree() %>%
+  set_engine("rpart") %>%
+  set_mode("regression")
+
+#Fit the model
+tree1_fit <- tree_reg_spec %>%  
+   fit(CO2_emissions ~ .,data = df_fuel_reg_norm_train)
+
+#Capture the predictions and metrics
+pred_tree1_fit <- augment(tree1_fit,df_fuel_reg_norm_test)
+
+curr_metrics <- pred_tree1_fit %>%
+  metrics(truth=CO2_emissions,estimate=.pred)
+results_new <- tibble(model = "Reg Tree Model",
+                  RMSE = curr_metrics[[1,3]],
+                  MAE = curr_metrics[[3,3]],
+                  RSQ = curr_metrics[[2,3]])
+tree1_mae <- curr_metrics %>%
+  filter(.metric=='mae') %>%
+  pull(.estimate)
+results_reg <- bind_rows(results_reg, results_new)
+
+```
+
+::: {.card title="Regression Tree Summary"}
+
+After examining the Regression Tree, tuned Random Forest trees as well as the tuned boosted tree, we can see that the most important variables for the Regression, RF and Boosted tree are **fuel_consumption_combined (fuel consumption combined for city + highway)** and **engine_size**.  RF and Boosted trees had a better fit compared to the regression tree. The next most important variables for RF and Boosted trees are **cylinders**, and **transmission_AV**. We can see that 
+
+* if there are **higher combined fuel consumption for city and highway**, the **CO2_emissions for the vehicle tends to be higher**.  
+* The Boosted tree is suggested since it performs the best out of all the regression trees.
+:::
+
+### Regression Tree
+
+::: {.card title="Analysis Summary"}
+
+We will predict the Median Value with all the variables.
+
+```{r}
+#Metrics
+results_reg %>%
+  kable(digits=2)
+```
+
+:::
+
+::: {.card title="View the Regression Tree and Variable Importance"}
+We see that the regression tree has 9 leaf nodes.
+```{r}
+#Tree Output
+rpart.plot(tree1_fit$fit, roundint=FALSE)
+#VI Plot
+vip(tree1_fit)
+```
+
+:::
+
+::: {.card title="Compare actual (CO2_emissions) vs predicted (y_hat)"}
+
+```{r}
+#Plot the Actual Versus Predicted Values
+ggplotly(ggplot(data = pred_tree1_fit,
+            aes(x = .pred, y = CO2_emissions)) +
+  geom_point(col = "#6e0000") +
+  geom_abline(slope = 1) +
+  ggtitle(paste("Regression Tree with MAE",round(tree1_mae,2))))
+```
+:::
+
+
+```{r}
+#Define the CV folds and grid parameters
+#Creating CV folds
+set.seed(4425)
+
+df_fuel_reg_norm_train_folds <- vfold_cv(df_fuel_reg_norm_train, v = 5)
+
+rf_fuel_grid <- expand_grid(mtry = 5:15,
+                       trees = c(500, 1000, 1500))
+
+
+#Define the Model Specification
+rf_fuel_tune_spec <- rand_forest(mtry = tune(), 
+                            trees = tune()) %>%
+                  set_engine("ranger", 
+                             importance = "impurity") %>% 
+                  set_mode("regression") 
+
+#Define our workflow
+fuel_rf_tree_wf <- workflow() %>%
+                  add_model(rf_fuel_tune_spec) %>%
+                  add_formula(CO2_emissions ~ .)
+
+#Tune on the grid of values
+fuel_rf_tree_rs <- fuel_rf_tree_wf %>% 
+                    tune_grid(resamples = df_fuel_reg_norm_train_folds,
+                              grid = rf_fuel_grid)
+
+#Selecting best parameters for model
+final_fuel_rf_tree_wf <- fuel_rf_tree_wf %>% 
+                      finalize_workflow(select_best(fuel_rf_tree_rs))
+
+```
+
+```{r}
+final_fuel_rf <- final_fuel_rf_tree_wf %>%
+                      fit(data = df_fuel_reg_norm_train) 
+
+```
+
+
+```{r}
+pred_final_fuel_rf <- final_fuel_rf %>% 
+                          augment(df_fuel_reg_norm_test) 
+
+```
+
+
+
+
+```{r}
+#Capture the predictions and metrics
+
+curr_metrics <- pred_final_fuel_rf %>%
+  metrics(truth=CO2_emissions,estimate=.pred)
+
+results_new <- tibble(model = "Tuned RF Tree Model",
+                  RMSE = curr_metrics[[1,3]],
+                  MAE = curr_metrics[[3,3]],
+                  RSQ = curr_metrics[[2,3]])
+
+rf_tree_mae <- curr_metrics %>%
+  filter(.metric=='mae') %>%
+  pull(.estimate)
+
+results_reg <- bind_rows(results_reg, results_new)
+
+```
+
+
+
+### Regression Tuned Random Forest Tree
+
+::: {.card title="Analysis Summary"}
+
+We will predict the CO2 emissions of vehicles using all the variables in the Random Forest Model.
+
+* Mtry of 15 and 1500 trees were selected as parameters for the model.
+
+```{r}
+#Metrics
+results_reg %>%
+  kable(digits=3)
+
+final_fuel_rf_tree_wf
+```
+
+:::
+
+::: {.card title="View the Variable Importance"}
+
+Fuel consumption combined and engine size are the most important predictors in our RF model.
+
+```{r}
+
+#VIP Plot
+final_fuel_rf %>% 
+  extract_fit_parsnip() %>% 
+  vip(aesthetics = list(fill = "#6e0000", col = "black"))
+```
+
+:::
+
+::: {.card title="Compare actual (CO2_emissions) vs predicted (y_hat)"}
+
+```{r}
+#Plot the Actual Versus Predicted Values
+ggplotly(ggplot(data = pred_final_fuel_rf,
+            aes(x = .pred, y = CO2_emissions)) +
+  geom_point(col = "#6e0000") +
+  geom_abline(slope = 1) +
+  ggtitle(paste("Regression Tree with MAE",round(rf_tree_mae,2))))
+```
+:::
+
+
+### Tuned Gradient Boosted Tree
+
+```{r}
+#Define the Model Specification
+xgb_tune_spec <- boost_tree(trees = 500,
+                            min_n = 5,
+                            #randomness
+                            mtry=tune(),
+                            #model complexity
+                            tree_depth = tune(),
+                            loss_reduction = tune(),
+                            #step size
+                            learn_rate = tune()) %>%
+                set_engine("xgboost") %>% 
+                set_mode("regression")
+
+#Define the grid parameters
+
+set.seed(23456)
+
+
+xgb_grid <- grid_latin_hypercube(
+              tree_depth(),
+              loss_reduction(),
+              finalize(mtry(), df_fuel_reg_norm_train),
+              learn_rate(),
+              size = 10)
+
+#Define workflow
+xgb_tune_wf <- workflow() %>%
+            add_model(xgb_tune_spec) %>%
+            add_formula(CO2_emissions ~ .)
+
+#Tune on the grid of values
+
+boost_rs <- xgb_tune_wf %>% 
+              tune_grid(resamples = df_fuel_reg_norm_train_folds,
+                        grid = xgb_grid)
+
+#Selecting best parameters
+final_boost_tune_wf <- xgb_tune_wf %>% 
+                finalize_workflow(select_best(boost_rs))
+
+final_fuel_xgb <- final_boost_tune_wf %>%
+                      fit(data = df_fuel_reg_norm_train) 
+
+```
+
+
+```{r}
+#Capture the predictions and metrics
+pred_final_fuel_xgb <- final_fuel_xgb %>% 
+                            augment(df_fuel_reg_norm_test)
+
+curr_metrics <- pred_final_fuel_xgb %>%
+  metrics(truth=CO2_emissions,estimate=.pred)
+results_new <- tibble(model = "Tuned Gradient Boosted Tree Model",
+                  RMSE = curr_metrics[[1,3]],
+                  MAE = curr_metrics[[3,3]],
+                  RSQ = curr_metrics[[2,3]])
+tree2_mae = curr_metrics %>%
+  filter(.metric=='mae') %>%
+  pull(.estimate)
+results_reg <- bind_rows(results_reg, results_new)
+
+```
+
+
+::: {.card title="Analysis Summary"}
+
+Let's look at a boosted tree to see if our metrics/results improve.
+
+* The parameters chosen for the boosted model are  mtry = 12, trees = 500, min_n = 5, tree_depth = 9,learn_rate = 0.0328 and loss_reduction = 0.240.
+
+```{r}
+results_reg %>%
+  kable(digits=3)
+
+
+final_boost_tune_wf
+```
+
+:::
+
+::: {.card title="View the Variable Importance"}
+
+Fuel consumption combined and engine size are the most important predictors in the model.
+```{r}
+
+#VIP Plot
+final_fuel_xgb %>% 
+  extract_fit_parsnip() %>% 
+  vip(aesthetics = list(fill = "#6e0000", col = "black"))
+```
+
+:::
+
+::: {.card title="Compare actual (CO2_emissions) vs predicted (y_hat) tuned tree"}
+```{r}
+ggplotly(ggplot(data = pred_final_fuel_xgb,
+            aes(x = .pred, y = CO2_emissions)) +
+        geom_point(col = "#6e0000") +
+        geom_abline(slope = 1) +
+        ggtitle(paste("Regression Tuned Gradient Boosted Tree with MAE",round(tree2_mae,2))))
+```
+
+:::
+
+
+
+# Classification Analysis
+## Row { .tabset}
+### Tuned Classification Trees Summary
+
+::: {.card title="Classification Models"}
+
+We are using the classification models to predict the high/low CO2 Rating.For the logistic regression, we also predicted the high/low Smog rating. These were coded to categorical in the earlier steps where High means a rating of 6 and above, while low is otherwise.
+
+For this analysis, we will perform a logistic regression and then the classification tree. 
+
+* We observed that the sensitivity of original models for CO2_rating classification were around 99.4%.This means that out of all the vehicles that were actually High rating, 99.4% of them were correctly predicted as High by the model.
+
+* We saw an accuracy of 98.9% for the best model. This means that ratings 98.9% of the observations were correctly predicted as their actual rating(both High and Low).
+
+* Using the best cutoffs for the models, the sensitivity increased to 100%.
+
+* The model I would choose for the classification is because it is easy to explain. The parameters for the classification tree was const complexity of 0.1 and tree depth of 4.
+
+:::
+
+```{r}
+#Model and capture metrics
+class_CO2_recipe<- recipe(CO2_rating ~ ., data = dplyr::select(df_fuel,-CO2_emissions,-fuel_consumption_city,-fuel_consumption_hwy)) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_numeric()) %>%
+  prep()
+
+class_smog_recipe<- recipe(smog_rating ~ ., data = dplyr::select(df_fuel,-CO2_emissions,-fuel_consumption_city,-fuel_consumption_hwy)) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_numeric()) %>%
+  prep()
+  
+df_class_CO2_norm <- bake(class_CO2_recipe, df_fuel)
+
+df_class_smog_norm <- bake(class_smog_recipe, df_fuel)
+
+#Creating training and testing for classification-CO2 rating
+set.seed(12934)
+
+CO2_class_split <- initial_split(df_class_CO2_norm,
+                            prop = .7,
+                            strata = CO2_rating) 
+
+df_CO2_norm_train<- rsample::training(CO2_class_split)
+df_CO2_norm_test<- rsample::testing(CO2_class_split)
+
+
+#Creating training and testing for classification-Smog rating
+set.seed(12934)
+
+smog_class_split <- initial_split(df_class_smog_norm,
+                            prop = .7,
+                            strata = smog_rating) 
+
+df_smog_norm_train<- rsample::training(smog_class_split)
+df_smog_norm_test<- rsample::testing(smog_class_split)
+```
+
+```{r}
+#CO2 rating classification reg model
+
+#Define metric set
+my_class_metrics <- metric_set(yardstick::accuracy, yardstick::sensitivity,
+                               yardstick::specificity, yardstick::precision)
+
+#Define Model Specifications
+CO2_class_tree_tune_spec <- decision_tree(cost_complexity = tune(),
+                             tree_depth = tune()) %>% 
+                  set_engine("rpart") %>% 
+                  set_mode("classification")
+
+set.seed(23432)
+#Define the CV folds and grid parameters
+fuel_CO2_folds <- vfold_cv(df_CO2_norm_train,v=5)
+fuel_CO2_grid <- dials::grid_regular(cost_complexity(),
+                                tree_depth(range = c(4, 8)),
+                                levels = 5)
+
+
+#Define our workflow with add_model() and add_formula()
+tree_CO2_class_wf <- workflow() %>%
+                  add_model(CO2_class_tree_tune_spec) %>%
+                  add_formula(CO2_rating ~ .)
+
+
+#Tune on the grid of values with tune_grid()
+
+tree_CO2_class_rs <- tree_CO2_class_wf %>% 
+                 tune_grid(resamples = fuel_CO2_folds,
+                          grid = fuel_CO2_grid,
+                          metrics=my_class_metrics)
+
+
+final_CO2_class_tree_wf <- tree_CO2_class_wf %>% 
+                        finalize_workflow(select_best(tree_CO2_class_rs, metric='sensitivity'))
+
+
+final_CO2_class_tree_fit <- final_CO2_class_tree_wf %>%
+                        fit(df_CO2_norm_train) %>%
+                        extract_fit_parsnip() 
+
+
+```
+
+```{r}
+
+
+#Capture the predictions and metrics
+pred_class_CO2_tree <- augment(final_CO2_class_tree_fit,df_CO2_norm_test)
+
+
+curr_metrics <- pred_class_CO2_tree %>%
+  my_class_metrics(truth=CO2_rating,estimate=.pred_class)
+results_cls <- tibble(model = "Classification Tree CO2 rating Model",
+                  Accuracy = curr_metrics[[1,3]],
+                  Sensitivity = curr_metrics[[2,3]],
+                  Specificity = curr_metrics[[3,3]],
+                  Avg_Sens_Spec = (Sensitivity + Specificity)/2,
+                  Precision = curr_metrics[[4,3]])
+class_tree1_sens <- curr_metrics %>%
+  filter(.metric=='sens') %>%
+  pull(.estimate)
+
+
+
+
+```
+
+::: {.card title="Classification Tree Summary"}
+
+We will use all the variables except CO2_emissions which is median value because
+this is what the medvHigh is created from. For this model we will set
+the cost complexity to .001.
+
+```{r}
+
+#Confusion Matrix
+pred_class_CO2_tree %>%
+  conf_mat(truth=CO2_rating,estimate=.pred_class)
+
+#Metrics
+results_cls %>%
+  kable(digits = 3, align = 'l')
+
+final_CO2_class_tree_wf
+```
+
+:::
+
+::: {.card title="View the Classification Tree and Variable Importance"}
+
+We can see we have 2 leaf nodes. The higher the vip value, the more important the predictor is for classification.
+```{r}
+#Tree Output
+rpart.plot(final_CO2_class_tree_fit$fit, type=1, extra = 102, roundint=FALSE)
+#VI Plot
+vip(final_CO2_class_tree_fit)
+```
+:::
+
+### Checking the Classification Tree Cutoff
+
+::: {.card title="View the ROC Curve"}
+
+```{r}
+#Plot the ROC curve
+#DO NOT EDIT FUNCTION
+ROC_graph <- function(pred_data, truth, probs, model_desc="", df_roc = ""){
+    #This function creates a ROC Curve. It will return a df_roc with values
+    #it used to create the graph. It will also add to a previous ROC curve
+    #The inputs are the prediction table (from augment()) and the columns for the
+    #truth and probability values. There is also an optional model description
+    #and a previous df_roc dataframe. The columns need to be strings (i.e., 'sales')
+    #Capture the auc value
+    curr_auc <- pred_data %>%
+                     roc_auc(truth = {{truth}}, {{probs}}) %>%
+                     pull(.estimate)
+    #Capture the thresholds and sens/spec
+    ###First choice creates a new df_roc table
+    if (mode(df_roc) == "character") { #if it is a tibble will be "list"
+        df_roc <- pred_data %>% roc_curve(truth = {{truth}}, {{probs}}) %>% 
+                          mutate(model = paste(model_desc,round(curr_auc,2)))
+    }
+    ###Second choice is if there is already a df_roc that was input
+    else {
+    df_roc <- bind_rows(df_roc,  #use if df_roc exists with other models
+                   pred_data %>% roc_curve(truth = {{truth}}, {{probs}}) %>% 
+                      mutate(model = paste(model_desc,round(curr_auc,2))))
+    }
+    #Plot the ROC Curve(s) 
+    print(ggplot(df_roc, 
+            aes(x = 1 - specificity, y = sensitivity, 
+                group = model, col = model)) +
+            geom_path() +
+            geom_abline(lty = 3)  +
+            scale_color_brewer(palette = "Dark2") +
+            theme(legend.position = "top") )
+    #Capture the roc values in a df to add additional ROC curves
+    return(df_roc)
+}
+#Sample Call
+df_roc_CO2_rating <- ROC_graph(pred_class_CO2_tree,"CO2_rating",".pred_High","CO2 Classification tree")
+```
+
+:::
+
+::: {.card title="Best Threshold "}
+
+```{r}
+#Find Best Threshold cutoff
+ROC_threshold <- function(pred_data,truth,probs) {
+  #This function finds the cutoff with the max sum of sensitivity and specificity
+  #Created tidy version of:
+  #http://scipp.ucsc.edu/~pablo/pulsarness/Step_02_ROC_and_Table_function.html
+  #The inputs are the prediction table (from augment()) and the columns for the
+  #truth and estimate values. The columns need to be strings (i.e., 'sales')
+
+  roc_curve_tbl <- pred_data %>%
+                    roc_curve(truth = {{truth}}, {{probs}})
+  auc = pred_data %>%
+              roc_auc(truth = {{truth}}, {{probs}}) %>%
+              pull(.estimate)
+  best_row = which.max(roc_curve_tbl$specificity + roc_curve_tbl$sensitivity)
+  return(tibble(Best_Cutoff = round(pull(roc_curve_tbl[best_row,'.threshold']),4),
+         Sensitivity = round(pull(roc_curve_tbl[best_row,'sensitivity']),4),
+         Specificity =round(pull(roc_curve_tbl[best_row,'specificity']),4),
+         AUC_for_Model = round(auc,4)))
+}
+
+
+best_cut_ct <- ROC_threshold(pred_class_CO2_tree,'CO2_rating', '.pred_High')
+best_cut_ct %>%
+  kable(digits=2)
+```
+
+```{r}
+
+#Adding a new cutoff prediction column
+pred_class_tree2 <- pred_class_CO2_tree %>%
+                    mutate(pred_High_bestcut = factor(ifelse(.pred_High > best_cut_ct[[1]],"High","Low"),
+                                              levels=c("High","Low")))
+
+# Confusion matrix for Classification Cutoff modified
+pred_class_tree2 %>%
+  conf_mat(truth=CO2_rating,estimate=pred_High_bestcut)
+
+# Metrics
+curr_metrics <- pred_class_tree2 %>%
+  my_class_metrics(truth=CO2_rating,estimate=pred_High_bestcut)
+results_new <- tibble(model = paste("Classification Tree Model Best Cutoff",round(best_cut_ct[[1]],2)),
+                  Accuracy = curr_metrics[[1,3]],
+                  Sensitivity = curr_metrics[[2,3]],
+                  Specificity = curr_metrics[[3,3]],
+                  Avg_Sens_Spec = (Sensitivity + Specificity)/2,
+                  Precision = curr_metrics[[4,3]])
+results_cls <- bind_rows(results_cls, results_new)
+results_cls %>%
+  kable(digits=3, align = 'l')
+```
+
+:::
+
+
+## Row { .tabset}
+
+### Logistic Regression-CO2 Rating
+
+::: {.card title="Logistic Summary- CO2 Rating"}
+
+
+For our final model, we will use logistic regression to explore two response variables- CO2_Rating and Smog Rating.
+
+We observed that fuel consumption combined (city + highway) and Vehicle Class SUV: Small are most important in the model along with the full logistic regression equation.
+
+```{r}
+#Model and capture metrics
+#Define the model specification
+logistic_spec <- logistic_reg() %>%
+             set_engine('glm') %>%
+             set_mode('classification')
+
+#Fit the model
+log_CO2_fit1 <- logistic_spec %>%
+              fit(CO2_rating ~ .-cylinders-smog_rating_Low, data = df_CO2_norm_train)
+
+#Capture the predictions and metrics
+
+pred_log_fit1 <- augment(log_CO2_fit1, df_CO2_norm_test)
+
+
+```
+
+```{r}
+tidy(log_CO2_fit1$fit) %>%
+  kable(digits=2)
+```
+
+:::
+
+::: {.card title="Pruned Logistic Regression Equation"}
+```{r}
+#Fit the pruned model and capture new metrics
+log_CO2_fit2 <- logistic_spec %>%
+              fit(CO2_rating ~ fuel_consumption_combined + 	+transmission_AS+vehicle_class_SUV..Small , data = df_CO2_norm_train)
+
+
+#Capture the predictions and metrics
+pred_log_CO2_final_fit <- augment(log_CO2_fit2,df_CO2_norm_test)
+
+curr_metrics <- pred_log_CO2_final_fit %>%
+  my_class_metrics(truth=CO2_rating,estimate=.pred_class)
+results_new <- tibble(model = "Pruned CO2 Rating Logistic Model",
+                  Accuracy = curr_metrics[[1,3]],
+                  Sensitivity = curr_metrics[[2,3]],
+                  Specificity = curr_metrics[[3,3]],
+                  Avg_Sens_Spec = (Sensitivity + Specificity)/2,
+                  Precision = curr_metrics[[4,3]])
+results_cls <- bind_rows(results_cls, results_new)
+class_tree1_sens <- curr_metrics %>%
+  filter(.metric=='sens') %>%
+  pull(.estimate)
+```
+
+```{r}
+#Logistic Equation
+tidy(log_CO2_fit2$fit) %>%
+  kable(digits=2)
+```
+
+:::
+
+::: {.card title="Metrics, and VIP Plot"}
+```{r}
+#Metrics
+results_cls %>%
+  kable(digits = 2, align = 'l')
+
+#Confusion Matrix
+pred_log_CO2_final_fit %>%
+  conf_mat(truth=CO2_rating,estimate=.pred_class)
+
+
+#VIP Plot
+vip(log_CO2_fit2)
+```
+
+:::
+
+### Checking the Logistic Cutoff
+::: {.card title="View the ROC Curve"}
+
+```{r}
+#ROC Curve
+df_roc_CO2_rating <- ROC_graph(pred_log_CO2_final_fit,"CO2_rating",".pred_High","log", df_roc_CO2_rating)
+```
+
+:::
+
+::: {.card title="Best Threshold "}
+
+```{r}
+best_cut_log <- ROC_threshold(pred_log_CO2_final_fit,"CO2_rating",".pred_High")
+best_cut_log  %>%
+  kable(digits=2)
+
+#Adding a new cutoff prediction column
+pred_log2_fit <- pred_log_CO2_final_fit %>%
+                    mutate(pred_High_bestcut = factor(ifelse(.pred_High > best_cut_log[[1]],"High","Low"),
+                                              levels=c("High","Low")))
+                                              
+# Confusion matrix for Logistic Cutoff 25%
+pred_log2_fit %>%
+  conf_mat(truth=CO2_rating,estimate=pred_High_bestcut)
+
+# Metrics
+curr_metrics <- pred_log2_fit %>%
+  my_class_metrics(truth=CO2_rating,estimate=pred_High_bestcut)
+results_new <- tibble(model = paste("Logistic Model Best Cutoff",round(best_cut_log[[1]],2)),
+                  Accuracy = curr_metrics[[1,3]],
+                  Sensitivity = curr_metrics[[2,3]],
+                  Specificity = curr_metrics[[3,3]],
+                  Avg_Sens_Spec = (Sensitivity + Specificity)/2,
+                  Precision = curr_metrics[[4,3]])
+results_cls <- bind_rows(results_cls, results_new)
+results_cls %>%
+  kable(digits = 4, align = 'l')
+```
+:::
+
+## Row { .tabset}
+
+### Logistic Regression-Smog Rating
+
+::: {.card title="Logistic Summary-Smog Rating"}
+
+
+For our final model, we will use logistic regression to also explore the Smog rating variable.
+
+In this model, we can see that combined fuel consumption and transmission AM are the most important predictors. The coefficients of the equation are given below.
+
+```{r}
+#Model and capture metrics
+#Define the model specification
+log_spec <- logistic_reg() %>%
+             set_engine('glm') %>%
+             set_mode('classification')
+
+
+
+#Fit the model
+log_smog_fit1 <- logistic_spec %>%
+              fit(smog_rating ~ .-cylinders-CO2_rating_Low, data = df_smog_norm_train)
+
+#Capture the predictions and metrics
+
+pred_smog_log_fit1 <- augment(log_smog_fit1, df_smog_norm_test)
+
+```
+
+```{r}
+tidy(log_smog_fit1$fit) %>%
+  kable(digits=2)
+```
+
+:::
+
+::: {.card title="Pruned Logistic Regression Equation"}
+```{r}
+#Fit the pruned model and capture new metrics
+log_smog_fit2 <- logistic_spec %>%
+              fit(smog_rating ~ .-cylinders-CO2_rating_Low-fuel_type_regular_gasoline-fuel_type_premium_gasoline-fuel_type_ethanol-vehicle_class_Two.seater-vehicle_class_Subcompact	-vehicle_class_Others	-vehicle_class_Minicompact-vehicle_class_Mid.size		-vehicle_class_Full.size	-make_Porsche- transmission_AV-vehicle_class_SUV..Small	, data = df_smog_norm_train)
+
+#Capture the predictions and metrics
+
+pred_smog_log_fit2 <- augment(log_smog_fit2, df_smog_norm_test)
+
+
+#Capture the predictions and metrics
+pred_smog_log2_fit <- augment(log_smog_fit2,df_smog_norm_test)
+
+curr_metrics <- pred_smog_log2_fit %>%
+  my_class_metrics(truth=smog_rating,estimate=.pred_class)
+results_cls2 <- tibble(model = "Pruned Smog Rating Logistic Model",
+                  Accuracy = curr_metrics[[1,3]],
+                  Sensitivity = curr_metrics[[2,3]],
+                  Specificity = curr_metrics[[3,3]],
+                  Avg_Sens_Spec = (Sensitivity + Specificity)/2,
+                  Precision = curr_metrics[[4,3]])
+
+class_smog_rating_tree1_sens <- curr_metrics %>%
+  filter(.metric=='sens') %>%
+  pull(.estimate)
+```
+
+```{r}
+#Logistic Equation
+tidy(log_smog_fit2$fit) %>%
+  kable(digits=2)
+```
+
+:::
+
+::: {.card title="Metrics and VI Plot"}
+```{r}
+#Metrics
+results_cls2 %>%
+  kable(digits = 2, align = 'l')
+
+#Confusion Matrix
+pred_smog_log2_fit %>%
+  conf_mat(truth=smog_rating,estimate=.pred_class)
+
+#VIP Plot
+vip(log_smog_fit2)
+```
+
+:::
+
+### Checking the Logistic Cutoff
+::: {.card title="View the ROC Curve"}
+
+```{r}
+#ROC Curve
+df_roc_smog_rating <- ROC_graph(pred_smog_log2_fit,"smog_rating",".pred_High","log_Smog_rating")
+```
+
+:::
+
+::: {.card title="Best Threshold "}
+
+```{r}
+best_smog_cut_log <- ROC_threshold(pred_smog_log2_fit,"smog_rating",".pred_High")
+best_smog_cut_log  %>%
+  kable(digits=2)
+
+#Adding a new cutoff prediction column
+pred_smog_log2_fit <- pred_smog_log2_fit %>%
+                    mutate(pred_High_bestcut = factor(ifelse(.pred_High > best_smog_cut_log[[1]],"High","Low"),
+                                              levels=c("High","Low")))
+                                              
+# Confusion matrix for New Logistic Cutoff 
+pred_smog_log2_fit %>%
+  conf_mat(truth=smog_rating,estimate=pred_High_bestcut)
+
+# Metrics
+curr_metrics <- pred_smog_log2_fit %>%
+  my_class_metrics(truth=smog_rating,estimate=pred_High_bestcut)
+results_new <- tibble(model = paste("Logistic Model Smog Rating Best Cutoff",round(best_smog_cut_log[[1]],2)),
+                  Accuracy = curr_metrics[[1,3]],
+                  Sensitivity = curr_metrics[[2,3]],
+                  Specificity = curr_metrics[[3,3]],
+                  Avg_Sens_Spec = (Sensitivity + Specificity)/2,
+                  Precision = curr_metrics[[4,3]])
+results_cls2 <- bind_rows(results_cls2, results_new)
+
+results_cls2 %>%
+  kable(digits = 2, align = 'l')
+```
+:::
+
+# Conclusion
+## Row
+
+::: {.card title="Summary"}
+
+In Conclusion, we can see that our predictors do help to predict the median value, either the high/low median value (with cutoff at $30,000) or the actual median values.
+
+Combining the results of both types of predictor models and only reporting where agreement was found, we can see that as these variables increase they:
+```{r}
+#final table summary of predictor changes
+predchangfnl = tibble(Decrease_CO2_emissions =
+                            c("Vehicles manufactured by Toyota",
+                             "Vehicles with AV(continuous variation) transmission",
+                            "Vehicles using ethanol fuel",
+                             "Vehicles using regular gasoline fuel"),
+                    Increase_CO2_emissions = c(
+                      "engine size of vehicles",
+                      "Vehicles manufactured by Ford and Porsche",
+                      "Vehicle class such as minicompact, pickup truck, sport utility, SUV & Two seater",
+                      ""))
+predchangfnl %>%
+  kable()
+```
+
+:::
+
+## Row
+
+::: {.card title="Predicting Continuous CO2 emissions"}
+
+In addition, if we compare the models that we examined for predicting continuous CO2 emissions, we see that the Tune Random Forest and the Gradient Boosted Tree performed much better than the linear regression and Regression Tree models.
+
+* Final Linear Regression MAE: 21.65
+* Regression Tree MAE: 11.65
+* Tuned RF Tree MAE: 1.54
+* Tuned Gradient Boosted Tree MAE: 1.31
+
+```{r}
+#Metrics
+results_reg %>%
+  kable(digits=2, align = 'l')
+```
+
+:::
+
+::: {.card title="Compare actual (CO2_emissions) vs predicted (y_hat) tuned tree"}
+```{r}
+df_act_pred <- bind_rows(
+            pred_reg1_fit %>% mutate(model = 'Linear Model'),
+            pred_reg2_fit %>% mutate(model = 'Linear Final Model'),
+            pred_tree1_fit %>% mutate(model = 'Tuned Reg Tree Model'),
+            pred_final_fuel_rf%>% mutate(model = 'Tuned RF Tree Model'),
+            pred_final_fuel_xgb%>% mutate(model = 'Tuned Gradient Boosted Model')
+)
+ggplotly(ggplot(df_act_pred, aes(y = .pred, x = CO2_emissions, color=model)) +
+  geom_point() +
+    geom_abline(col = "gold") +
+    ggtitle("Predicted vs Actual Median Value") )
+```
+
+:::
+
+## Row
+
+::: {.card title="Predicting CO2_rating and Smog Rating Value"}
+Predicting Categorical CO2 Rating
+
+Comparing the models we examined for predicting the categorical response CO2 rating, we observed that they are similar but the classification tree has higher precision,accuracy and specificity and  similar sensitivity to the best logistic model.
+
+* Classification Tree (cutoff `r round(best_cut_ct[[1]],2)`) Accuracy .989 Sensitivity .994 Specificity 0.988 Precision .956
+* Logistic Regression (cutoff `r round(best_cut_log[[1]],2)`) Accuracy .988 Sensitivity .994 Specificity 0.986 Precision .951
+
+```{r}
+#Metrics
+results_cls %>%
+  kable(digits=2, align = 'l')
+```
+
+Predicting Categorical Smog Rating
+
+Looking at the logistic model for Smog rating, we observed that best cutoff this model has a higher sensitivity, accuracy and average sensitivity+ specificity, but the specificity and precision decreased.
+
+* Logistic Regression (cutoff `r round(best_smog_cut_log[[1]],2)`) Accuracy .74 Sensitivity .89 Specificity 0.64 Precision .61
+
+
+```{r}
+#Metrics
+results_cls2 %>%
+  kable(digits=2, align = 'l')
+```
+
+:::
+
+::: {.card title="ROC Curves"}
+```{r}
+#ROC Curve 
+df_roc_CO2_rating <- ROC_graph(pred_log_CO2_final_fit,"CO2_rating",".pred_High","log", df_roc_CO2_rating) 
+```
+```{r}
+#ROC Curve 
+df_roc_smog_rating <-ROC_graph(pred_smog_log2_fit,"smog_rating",".pred_High","log")
+```
+
+
+:::
+
+::: {.card title="Reflection"}
+
+Q. What did work hardest on or are you most proud of in your project?
+
+* Formatting the dashboard was something I was worked the hardest on and was proud of in my project. I think it is very important to learn to communicate effectively and formatting this project as a dashboard made us all think about ways to choose and organize information to communicate the results effectively.
+
+Q. What would you do if you had another week to work on the project?
+
+* If I had one more week to work on the project, for the classification models, I would like to try more models for the Smog rating variable. Since the CO2 rating response variable barely had any significant predictors, I tried to see if results for a different categorical response was better. I think it would have been interesting to look at classification trees for Smog Rating or even RF and Boosted Tree models.
+
+:::
